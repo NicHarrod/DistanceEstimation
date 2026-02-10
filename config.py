@@ -23,7 +23,7 @@ class Config:
     # file extension parameters
     depth_image_extensions: List[str] = field(default_factory=lambda: [".exr"])
     intensity_image_extensions: List[str] = field(default_factory=lambda: [".png", ".PNG", ".jpg", ".jpeg", ".JPG", ".JPEG"])
-
+    
     # detection parameters
     bbox_confidence_threshold: float = 0.2  # minimal confidence of detections
     detect_humans: bool = False  # whether to detect humans and include their distance estimations in the output

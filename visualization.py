@@ -82,7 +82,8 @@ def visualize_detection_impl(data_dir, detection_id, detection_frame, calibrated
             1, 2, figsize=(scale * 6.202, scale * 1.5)
         )
     
-    ax1.imshow(detection_frame[..., ::-1])
+    # ax1.imshow(detection_frame[..., ::-1])
+    ax1.imshow(np.asarray(detection_frame[..., ::-1], dtype=np.uint8))
     ax1.set_title("Observation")
     for i, (box, mask, world_pos) in enumerate(zip(boxes, masks, world_positions)):
         if mask is not None:
@@ -108,7 +109,8 @@ def visualize_detection_impl(data_dir, detection_id, detection_frame, calibrated
         ax1.annotate(label, (rx, ry - 5), color="red", fontsize=6)
     ax1.get_xaxis().set_visible(False)
     ax1.get_yaxis().set_visible(False)
-    im = ax2.imshow(calibrated_depth_midas, vmin=min_depth, vmax=max_depth, cmap="turbo")
+    # im = ax2.imshow(calibrated_depth_midas, vmin=min_depth, vmax=max_depth, cmap="turbo")
+    im = ax2.imshow(np.asarray(calibrated_depth_midas, dtype=np.float64), vmin=min_depth, vmax=max_depth, cmap="turbo")
     ax2.set_title("Depth")
     ax2.get_xaxis().set_visible(False)
     ax2.get_yaxis().set_visible(False)
@@ -122,18 +124,32 @@ def visualize_detection_impl(data_dir, detection_id, detection_frame, calibrated
                 marker="x",
             )
     if farthest_calibration_frame_disp is not None:
+        # im = ax3.imshow(
+        #     np.clip(
+        #         farthest_calibration_frame_disp.data,
+        #         max_depth ** -1,
+        #         min_depth ** -1,
+        #     )
+        #     ** -1,
+        #     vmin=min_depth,
+        #     vmax=max_depth,
+        #     cmap="turbo",
+        # )
         im = ax3.imshow(
-            np.clip(
-                farthest_calibration_frame_disp.data,
-                max_depth ** -1,
-                min_depth ** -1,
-            )
-            ** -1,
+            np.asarray(
+                np.clip(
+                    farthest_calibration_frame_disp.data,
+                    max_depth ** -1,
+                    min_depth ** -1,
+                )
+                ** -1,
+                dtype=np.float64
+            ),
             vmin=min_depth,
             vmax=max_depth,
             cmap="turbo",
         )
-        ax3.set_title("Reference Depth")
+        ax3.set_title("Reference Depth this is the new run")
         ax3.get_xaxis().set_visible(False)
         ax3.get_yaxis().set_visible(False)
 

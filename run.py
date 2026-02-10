@@ -218,6 +218,11 @@ def run(config: Config, gui=False):
                     scores, labels, boxes = scores[correct_label_idx], labels[correct_label_idx], boxes[correct_label_idx]
 
                     # discard all detections with low confidence
+
+
+
+                    ### TODO CONFIDENCE
+                    print(scores.flatten())
                     high_confidence_idx = np.nonzero(scores.flatten() >= config.bbox_confidence_threshold)
                     scores, labels, boxes = scores[high_confidence_idx], labels[high_confidence_idx], boxes[high_confidence_idx]
 

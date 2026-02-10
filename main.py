@@ -328,7 +328,7 @@ def main():
             "xyz.haucke.distance_estimation",
             icon=icon,
             home_page="https://timm.haucke.xyz/publications/distance-estimation-animal-abundance",
-            description="An application for estimating distances to animals in camera trap footage",
+            description="An application for estimating distances to animals in camera trap footage ",
             author="Timm Haucke",
             startup=build,
         ).main_loop()
