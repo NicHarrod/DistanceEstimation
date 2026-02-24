@@ -12,11 +12,12 @@ from config import Config
 from dpt import DPT
 from dpt_pytorch import DPTPyTorch
 from depth_anything import DepthAnything
+from depth_anything_3_pytorch import Depth_Anything_3
 from metric3d import Metric3D
 from megadetector import MegaDetector, MegaDetectorLabel
 from sam import SAM
 from custom_types import DetectionSamplingMethod, MultipleAnimalReduction, SampleFrom, DepthEstimationModel
-from utils import calibrate, calibrate_v0, piecewise_linear_calibration, crop, resize, exception_to_str, get_calibration_frame_dist, get_extension_agnostic_path, multi_file_extension_glob, blur_and_downsample, imread
+from de_utils import calibrate, calibrate_v0, piecewise_linear_calibration, crop, resize, exception_to_str, get_calibration_frame_dist, get_extension_agnostic_path, multi_file_extension_glob, blur_and_downsample, imread
 from visualization import visualize_detection, visualize_farthest_calibration_frame
 
 
@@ -57,6 +58,8 @@ def run(config: Config, gui=False):
         do_calibrate = calibrate_v0
     elif config.depth_estimation_model == DepthEstimationModel.DEPTH_AHYTHING_METRIC:
         depth_estimation_model = DepthAnything()
+    elif config.depth_estimation_model == DepthEstimationModel.DEPTH_ANYTHING_3:
+        depth_estimation_model = Depth_Anything_3()
     elif config.depth_estimation_model == DepthEstimationModel.METRIC_3D_V2_VIT_S:
         depth_estimation_model = Metric3D()
     else:

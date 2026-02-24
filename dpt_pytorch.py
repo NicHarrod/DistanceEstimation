@@ -1,5 +1,5 @@
 import numpy as np
-from utils import DownloadableWeights, condition_disparity
+from de_utils import DownloadableWeights, condition_disparity
 
 
 class DPTPyTorch(DownloadableWeights):

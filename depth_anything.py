@@ -1,73 +1,78 @@
-
-import sys
-import os
-import json
 import logging
+import json
 import numpy as np
 import cv2
-import onnxruntime
-from utils import get_onnxruntime_providers, DownloadableWeights
+import torch
+from transformers import AutoModelForDepthEstimation
+from de_utils import DownloadableWeights
 
 
 class DepthAnything(DownloadableWeights):
     def __init__(self):
         self._model_loaded = False
+        self.device = None
 
     def _load_model(self):
         if self._model_loaded:
             return
         self._model_loaded = True
 
-        weights_url = "https://github.com/timmh/Depth-Anything/releases/download/onnx_v0.1/depth_anything_metric_depth_outdoor.onnx"
-        wegiths_md5 = "cfca784a388778074c6d88cb6f687961"
-        weights_path = self.get_weights(weights_url, wegiths_md5)
+        # ---- SAME MODEL FAMILY AS ONNX (V1 BASE) ----
+        model_name = "LiheYoung/depth-anything-base-hf"
 
-        providers = get_onnxruntime_providers()
-        try:
-            self.session = onnxruntime.InferenceSession(
-                weights_path,
-                providers=providers,
-            )
-        except Exception as e:
-            providers_str = ",".join(providers)
-            logging.warn(f"Failed to create onnxruntime inference session with providers '{providers_str}', trying 'CPUExecutionProvider'")
-            self.session = onnxruntime.InferenceSession(
-                weights_path,
-                providers=["CPUExecutionProvider"],
-            )
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        metadata = self.session.get_modelmeta().custom_metadata_map
-        self.net_w, self.net_h = json.loads(metadata["ImageSize"])
-        normalization = json.loads(metadata["Normalization"])
-        self.prediction_factor = float(metadata["PredictionFactor"])
-        self.mean = np.array(normalization["mean"])
-        self.std = np.array(normalization["std"])
-    
+        self.model = AutoModelForDepthEstimation.from_pretrained(model_name)
+        self.model.eval().to(self.device)
+
+        # ---- HARDCODE values from ONNX metadata ----
+        # These must match code 1 exactly
+        self.net_w, self.net_h = 518, 518
+        self.mean = np.array([0.485, 0.456, 0.406])
+        self.std = np.array([0.229, 0.224, 0.225])
+        self.prediction_factor = 1000.0  # typical for metric model
+
+        logging.info(f"Depth Anything V1 loaded on {self.device}")
+
     def __call__(self, img):
-        # ensure model is loaded
         self._load_model()
 
-        # BGR to RGB
+        # ---- EXACT SAME PREPROCESSING AS CODE 1 ----
+
+        # BGR → RGB
         img = img[..., ::-1]
 
-        # convert into 0..1 range
-        img = img / 255.
+        # 0..1 scaling
+        img = img / 255.0
 
-        # resize
+        # Resize to network size
         img_input = cv2.resize(img, (self.net_w, self.net_h), cv2.INTER_AREA)
 
-        # normalize
+        # Normalize
         img_input = (img_input - self.mean) / self.std
 
-        # transpose from HWC to CHW
+        # HWC → CHW
         img_input = img_input.transpose(2, 0, 1)
 
-        # add batch dimension
-        img_input = img_input[None, ...]
+        # Add batch dim
+        img_input = torch.from_numpy(img_input).unsqueeze(0).float().to(self.device)
 
-        # compute
-        prediction = self.session.run(["output"], {"input": img_input.astype(np.float32)})[0][0][0]
-        prediction = cv2.resize(prediction, (img.shape[1], img.shape[0]), cv2.INTER_CUBIC)
+        # ---- INFERENCE ----
+        with torch.inference_mode():
+            prediction = self.model(pixel_values=img_input).predicted_depth
+
+        # Remove batch/channel dims
+        prediction = prediction[0, 0].cpu().numpy()
+
+        # Resize back to original
+        prediction = cv2.resize(
+            prediction,
+            (img.shape[1], img.shape[0]),
+            interpolation=cv2.INTER_CUBIC,
+        )
+        print(prediction.min(), prediction.max(), prediction.mean())
+        # Apply same scaling as ONNX
         prediction *= self.prediction_factor
+        print(prediction.min(), prediction.max(), prediction.mean())
 
         return prediction

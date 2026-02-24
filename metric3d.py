@@ -1,73 +1,58 @@
-
 import sys
 import os
-import json
 import logging
 import numpy as np
 import cv2
-import onnxruntime
-from utils import get_onnxruntime_providers, DownloadableWeights
+import torch
+from de_utils import DownloadableWeights, condition_disparity
 
 
 class Metric3D(DownloadableWeights):
     def __init__(self):
         self._model_loaded = False
+        self.device = None
+        self.model = None
 
     def _load_model(self):
         if self._model_loaded:
             return
         self._model_loaded = True
 
-        weights_url = "https://github.com/timmh/Metric3D/releases/download/v0.1/metric3d_vit_small.onnx"
-        weights_md5 = "f620d1b8d70dd3cd8652b82cfe9f9a77"
-        weights_path = self.get_weights(weights_url, weights_md5)
-
-        providers = get_onnxruntime_providers()
         try:
-            self.session = onnxruntime.InferenceSession(
-                weights_path,
-                providers=providers,
+            from metric3d.apis import SingleImageInferencer
+            
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            
+            # Load Metric3D ViT-S model
+            self.model = SingleImageInferencer(
+                ckpt_path='https://huggingface.co/JUGGHM/Metric3D-vit-small/resolve/main/metric_depth_vit_small.pth',
+                device=self.device
             )
+            
+            logging.info(f"Metric3D loaded on {self.device}")
         except Exception as e:
-            providers_str = ",".join(providers)
-            logging.warn(f"Failed to create onnxruntime inference session with providers '{providers_str}', trying 'CPUExecutionProvider'")
-            self.session = onnxruntime.InferenceSession(
-                weights_path,
-                providers=["CPUExecutionProvider"],
-            )
+            logging.error(f"Failed to load Metric3D: {str(e)}")
+            raise
 
-        metadata = self.session.get_modelmeta().custom_metadata_map
-        self.net_w, self.net_h = json.loads(metadata["ImageSize"])
-        normalization = json.loads(metadata["Normalization"])
-        self.prediction_factor = float(metadata["PredictionFactor"])
-        self.mean = np.array(normalization["mean"])
-        self.std = np.array(normalization["std"])
-    
     def __call__(self, img):
         # ensure model is loaded
         self._load_model()
 
         # BGR to RGB
-        img = img[..., ::-1]
+        img_rgb = img[..., ::-1]
 
-        # resize
-        img_input = cv2.resize(img, (self.net_w, self.net_h), cv2.INTER_LINEAR)
+        # Run inference
+        with torch.inference_mode():
+            # The SingleImageInferencer handles preprocessing and returns metric depth
+            output = self.model.infer_cv2(img_rgb)
+            
+            # output is a dict with 'metric_depth' and other keys
+            prediction = output['metric_depth']
 
-        # normalize
-        img_input = (img_input - self.mean) / self.std
-
-        # transpose from HWC to CHW
-        img_input = img_input.transpose(2, 0, 1)
-
-        # add batch dimension
-        img_input = img_input[None, ...]
-
-        # compute
-        prediction = self.session.run(["pred_depth"], {"image": img_input.astype(np.float32)})[0][0][0]
-        prediction = cv2.resize(prediction, (img.shape[1], img.shape[0]), cv2.INTER_CUBIC)
-        prediction *= self.prediction_factor
-
-        # into disparity
+        # Convert metric depth to disparity (inverse)
+        # Clip to avoid division by zero
         prediction = np.clip(prediction, 1e-6, np.inf) ** -1
-
+        prediction = prediction.astype(np.float32)
+        prediction = condition_disparity(prediction)
+        
         return prediction

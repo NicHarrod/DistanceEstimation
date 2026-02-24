@@ -6,7 +6,7 @@ import logging
 import numpy as np
 import cv2
 import onnxruntime
-from utils import get_onnxruntime_providers, DownloadableWeights
+from de_utils import get_onnxruntime_providers, DownloadableWeights
 
 
 class DPT(DownloadableWeights):

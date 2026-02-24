@@ -26,7 +26,7 @@ urllib.request.install_opener(
 import toga
 
 from config import Config
-from utils import is_standalone, exception_to_str, EnumActionLowerCase, dirs
+from de_utils import is_standalone, exception_to_str, EnumActionLowerCase, dirs
 
 
 def var_to_label(var: str):

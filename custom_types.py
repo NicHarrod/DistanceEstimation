@@ -30,3 +30,4 @@ class DepthEstimationModel(Enum):
     DEPTH_AHYTHING_METRIC = auto()
     METRIC_3D_V2_VIT_S = auto()
     DPT_PYTORCH = auto()
+    DEPTH_ANYTHING_3 = auto()
