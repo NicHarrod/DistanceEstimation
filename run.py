@@ -12,11 +12,12 @@ from config import Config
 from dpt import DPT
 from dpt_pytorch import DPTPyTorch
 from depth_anything import DepthAnything
-from depth_anything_3_pytorch import Depth_Anything_3
+from depth_anything_v3_pytorch import Depth_Anything_3
 from metric3d import Metric3D
 from megadetector import MegaDetector, MegaDetectorLabel
+from megadetector_v6 import MegaDetectorV6, MegaDetectorLabel as MegaDetectorV6Label
 from sam import SAM
-from custom_types import DetectionSamplingMethod, MultipleAnimalReduction, SampleFrom, DepthEstimationModel
+from custom_types import DetectionSamplingMethod, MultipleAnimalReduction, SampleFrom, DepthEstimationModel, DetectionModel
 from de_utils import calibrate, calibrate_v0, piecewise_linear_calibration, crop, resize, exception_to_str, get_calibration_frame_dist, get_extension_agnostic_path, multi_file_extension_glob, blur_and_downsample, imread
 from visualization import visualize_detection, visualize_farthest_calibration_frame
 
@@ -29,6 +30,13 @@ class StatusUpdate():
     current_detection_id: Optional[str] = None
     current_detection_idx: Optional[str] = None
     total_detections: Optional[str] = None
+
+
+def _squeeze_single_channel(arr):
+    arr = np.asarray(arr)
+    if arr.ndim == 3 and arr.shape[-1] == 1:
+        return arr[..., 0]
+    return arr
 
 
 def run(config: Config, gui=False):
@@ -65,7 +73,14 @@ def run(config: Config, gui=False):
     else:
         raise ValueError(f"Invalud depth estimation model '{config.depth_estimation_model}'")
     yield
-    megadetector = MegaDetector()
+    if config.detection_model == DetectionModel.MEGADETECTOR:
+        megadetector = MegaDetector()
+        detector_labels = MegaDetectorLabel
+    elif config.detection_model == DetectionModel.MEGADETECTOR_V6:
+        megadetector = MegaDetectorV6()
+        detector_labels = MegaDetectorV6Label
+    else:
+        raise ValueError(f"Invalid detection model '{config.detection_model}'")
     yield
     if config.detection_sampling_method == DetectionSamplingMethod.SAM:
         sam = SAM()
@@ -120,7 +135,9 @@ def run(config: Config, gui=False):
                                 > 127,
                                 config.crop_top, config.crop_bottom, config.crop_left, config.crop_right,
                             )
+                            mask = _squeeze_single_channel(mask)
                             disp = depth_estimation_model(img)
+                            disp = _squeeze_single_channel(disp)
                             disp = np.ma.masked_where(mask, disp)
                             calibration_frames[dist] = disp
 
@@ -215,9 +232,9 @@ def run(config: Config, gui=False):
 
                     # discard all non-animal detections
                     if config.detect_humans:
-                        correct_label_idx = np.nonzero((labels.flatten() == MegaDetectorLabel.ANIMAL) | (labels.flatten() == MegaDetectorLabel.PERSON))
+                        correct_label_idx = np.nonzero((labels.flatten() == detector_labels.ANIMAL) | (labels.flatten() == detector_labels.PERSON))
                     else:
-                        correct_label_idx = np.nonzero(labels.flatten() == MegaDetectorLabel.ANIMAL)
+                        correct_label_idx = np.nonzero(labels.flatten() == detector_labels.ANIMAL)
                     scores, labels, boxes = scores[correct_label_idx], labels[correct_label_idx], boxes[correct_label_idx]
 
                     # discard all detections with low confidence
@@ -256,6 +273,7 @@ def run(config: Config, gui=False):
                     if config.depth_estimation_model == DepthEstimationModel.DEPTH_AHYTHING_METRIC:
                         assert config.sample_from == SampleFrom.DETECTION, "Config must be set to sample from detection if using metric depth model"
                         depth = depth_estimation_model(img)
+                        depth = _squeeze_single_channel(depth)
                         disp = np.clip(depth, config.min_depth, config.max_depth) ** -1
                     else:
                         # check if depth from stereo camera exists or calibration succeeded
@@ -266,10 +284,12 @@ def run(config: Config, gui=False):
                         elif precomputed_depth_filename is not None:
                             assert config.sample_from == SampleFrom.DETECTION, "Config must be set to sample from detection if using precomputed depth maps"
                             depth = imread(precomputed_depth_filename, cv2.IMREAD_UNCHANGED)
+                            depth = _squeeze_single_channel(depth)
                             disp = np.clip(depth, config.min_depth, config.max_depth) ** -1
                         elif precomputed_depth_filename is None and farthest_calibration_frame_disp is not None:
                             if config.sample_from == SampleFrom.DETECTION:
                                 disp = depth_estimation_model(img)
+                                disp = _squeeze_single_channel(disp)
                                 if config.calibrate_metric:
                                     disp = np.clip(disp, eps, np.inf)
                                 mask = (farthest_calibration_frame_disp ** -1) >= (config.max_depth - eps)

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import List
-from custom_types import DetectionSamplingMethod, SampleFrom, MultipleAnimalReduction, RegressionMethod, DepthEstimationModel
+from custom_types import DetectionSamplingMethod, SampleFrom, MultipleAnimalReduction, RegressionMethod, DepthEstimationModel, DetectionModel
 
 
 @dataclass
@@ -25,6 +25,7 @@ class Config:
     intensity_image_extensions: List[str] = field(default_factory=lambda: [".png", ".PNG", ".jpg", ".jpeg", ".JPG", ".JPEG"])
     
     # detection parameters
+    detection_model: DetectionModel = DetectionModel.MEGADETECTOR  # one of MEGADETECTOR|MEGADETECTOR_V6
     bbox_confidence_threshold: float = 0.2  # minimal confidence of detections
     detect_humans: bool = False  # whether to detect humans and include their distance estimations in the output
 

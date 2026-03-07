@@ -31,3 +31,8 @@ class DepthEstimationModel(Enum):
     METRIC_3D_V2_VIT_S = auto()
     DPT_PYTORCH = auto()
     DEPTH_ANYTHING_3 = auto()
+
+
+class DetectionModel(Enum):
+    MEGADETECTOR = auto()
+    MEGADETECTOR_V6 = auto()
