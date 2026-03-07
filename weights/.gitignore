@@ -1,2 +1,4 @@
-*.onnx
-*.tflite
+*
+!.gitignore
+!download.sh
+!download.ps1
