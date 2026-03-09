@@ -17,6 +17,7 @@ from metric3d import Metric3D
 from megadetector import MegaDetector, MegaDetectorLabel
 from megadetector_v6 import MegaDetectorV6, MegaDetectorLabel as MegaDetectorV6Label
 from sam import SAM
+from sam3_wrapper import SAM3
 from custom_types import DetectionSamplingMethod, MultipleAnimalReduction, SampleFrom, DepthEstimationModel, DetectionModel
 from de_utils import calibrate, calibrate_v0, piecewise_linear_calibration, crop, resize, exception_to_str, get_calibration_frame_dist, get_extension_agnostic_path, multi_file_extension_glob, blur_and_downsample, imread
 from visualization import visualize_detection, visualize_farthest_calibration_frame
@@ -82,8 +83,12 @@ def run(config: Config, gui=False):
     else:
         raise ValueError(f"Invalid detection model '{config.detection_model}'")
     yield
+    sam_model = None
     if config.detection_sampling_method == DetectionSamplingMethod.SAM:
-        sam = SAM()
+        sam_model = SAM()
+        yield
+    elif config.detection_sampling_method == DetectionSamplingMethod.SAM3:
+        sam_model = SAM3()
         yield
 
     with open(os.path.join(config.data_dir, "results", "results.csv"), "w", newline="") as result_csv_file, open(os.path.join(config.data_dir, "results", "results.txt"), "w") as result_distance_file: 
@@ -251,9 +256,9 @@ def run(config: Config, gui=False):
                     centerness_idx = np.argsort(centerness)
                     scores, labels, boxes = scores[centerness_idx], labels[centerness_idx], boxes[centerness_idx]
 
-                    if config.detection_sampling_method == DetectionSamplingMethod.SAM:
+                    if config.detection_sampling_method in (DetectionSamplingMethod.SAM, DetectionSamplingMethod.SAM3):
                         # compute SAM masks
-                        masks = sam(img, boxes)
+                        masks = sam_model(img, boxes)
                         animal_mask = np.any(masks, axis=0)
 
                         yield
@@ -343,7 +348,7 @@ def run(config: Config, gui=False):
                                 round(sample_location[1][0] + box[0]),
                             )
                             sample_locations += [sample_location]
-                        elif config.detection_sampling_method == DetectionSamplingMethod.SAM:
+                        elif config.detection_sampling_method in (DetectionSamplingMethod.SAM, DetectionSamplingMethod.SAM3):
                             ymin, ymax = max(0, min(depth.shape[0] - 2, round(box[1]))), max(0, min(depth.shape[0] - 1, round(box[3])))
                             xmin, xmax = max(0, min(depth.shape[1] - 2, round(box[0]))), max(0, min(depth.shape[1] - 1, round(box[2])))
                             depth_cropped = depth[ymin:ymax, xmin:xmax]

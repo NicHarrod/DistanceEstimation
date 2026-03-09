@@ -45,8 +45,7 @@ class SAM(DownloadableWeights):
         # ensure model is loaded
         self._load_model()
 
-        img_rgb = img[..., ::-1]
-        original_size = img_rgb.shape[:2]
+        img_rgb = np.ascontiguousarray(img[..., ::-1])
         
         # Set the image for the predictor
         self.predictor.set_image(img_rgb)

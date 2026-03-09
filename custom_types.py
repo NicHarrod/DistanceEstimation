@@ -5,6 +5,7 @@ class DetectionSamplingMethod(Enum):
     BBOX_BOTTOM = auto()
     BBOX_PERCENTILE = auto()
     SAM = auto()
+    SAM3 = auto()
 
 
 class SampleFrom(Enum):
