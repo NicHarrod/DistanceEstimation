@@ -47,12 +47,17 @@ class SAMDetector:
     """
 
     def __init__(self, prompt: str = "Sign Being Held", conf: float = 0.1):
-        self.prompt = prompt
+        self.prompt = "Sign Being Held"
+        self.set_prompt(prompt)
         self.conf = conf
         self._model_loaded = False
         self.device = None
         self.model = None
         self.processor = None
+
+    def set_prompt(self, prompt: str):
+        sanitized_prompt = "" if prompt is None else str(prompt).strip()
+        self.prompt = sanitized_prompt if sanitized_prompt else "Sign Being Held"
 
     def _load_model(self):
         if self._model_loaded:

@@ -61,6 +61,17 @@ def run(config: Config, gui=False):
             logging.error(f"Failed to initialize desktop notifier for GUI notifications: {exception_to_str(e)}")
             notifier = None
 
+    prompt_value_normalized = (config.sam_detector_prompt or "").strip().lower()
+    use_depth_evaluation_prompt = prompt_value_normalized == "depth_evaluation"
+    if use_depth_evaluation_prompt:
+        logging.info("Using calibration_frames as detection input because sam_detector_prompt is set to 'depth_evaluation'.")
+
+    use_prompt_change_sam_detector = config.prompt_change_sam_detector
+    selected_detection_model = config.detection_model
+    if use_prompt_change_sam_detector and selected_detection_model != DetectionModel.SAM_DETECTOR:
+        logging.info("prompt_change_sam_detector enabled: overriding detection_model to SAM_DETECTOR.")
+        selected_detection_model = DetectionModel.SAM_DETECTOR
+
     do_calibrate = calibrate
     if config.depth_estimation_model == DepthEstimationModel.DPT:
         depth_estimation_model = DPT()
@@ -76,17 +87,23 @@ def run(config: Config, gui=False):
     else:
         raise ValueError(f"Invalud depth estimation model '{config.depth_estimation_model}'")
     yield
-    if config.detection_model == DetectionModel.MEGADETECTOR:
+    if selected_detection_model == DetectionModel.MEGADETECTOR:
         megadetector = MegaDetector()
         detector_labels = MegaDetectorLabel
-    elif config.detection_model == DetectionModel.MEGADETECTOR_V6:
+    elif selected_detection_model == DetectionModel.MEGADETECTOR_V6:
         megadetector = MegaDetectorV6()
         detector_labels = MegaDetectorV6Label
-    elif config.detection_model == DetectionModel.SAM_DETECTOR:
-        megadetector = SAMDetector(conf=config.bbox_confidence_threshold)
+    elif selected_detection_model == DetectionModel.SAM_DETECTOR:
+        sam_detector_prompt = config.sam_detector_prompt
+        if use_prompt_change_sam_detector:
+            sam_detector_prompt = "sign"
+        megadetector = SAMDetector(
+            prompt=sam_detector_prompt,
+            conf=config.bbox_confidence_threshold,
+        )
         detector_labels = SAMDetectorLabel
     else:
-        raise ValueError(f"Invalid detection model '{config.detection_model}'")
+        raise ValueError(f"Invalid detection model '{selected_detection_model}'")
     yield
     sam_model = None
     if config.detection_sampling_method == DetectionSamplingMethod.SAM:
@@ -232,10 +249,16 @@ def run(config: Config, gui=False):
                 row += [notification_str]
                 result_csv_writer.writerow(row)
             
-            detection_frame_filenames = sorted(list(set(
-                multi_file_extension_glob(os.path.join(transect_dir, "detection_frames", "*"), config.intensity_image_extensions) +
-                multi_file_extension_glob(os.path.join(transect_dir, "detection_frames_cropped", "*"), config.intensity_image_extensions)  # for backwards compability. use crop configuration instead
-            )))
+            if use_depth_evaluation_prompt:
+                detection_frame_filenames = sorted(list(set(
+                    multi_file_extension_glob(os.path.join(transect_dir, "calibration_frames", "*"), config.intensity_image_extensions) +
+                    multi_file_extension_glob(os.path.join(transect_dir, "calibration_frames_cropped", "*"), config.intensity_image_extensions)  # for backwards compability. use crop configuration instead
+                )))
+            else:
+                detection_frame_filenames = sorted(list(set(
+                    multi_file_extension_glob(os.path.join(transect_dir, "detection_frames", "*"), config.intensity_image_extensions) +
+                    multi_file_extension_glob(os.path.join(transect_dir, "detection_frames_cropped", "*"), config.intensity_image_extensions)  # for backwards compability. use crop configuration instead
+                )))
             for detection_idx, detection_frame_filename in enumerate(detection_frame_filenames):
                 detection_id = os.path.splitext(os.path.basename(detection_frame_filename))[0]
                 yield StatusUpdate(transect_id, transect_idx, len(transect_dirs), detection_id, detection_idx, len(detection_frame_filenames))
@@ -261,6 +284,9 @@ def run(config: Config, gui=False):
                     yield
 
                     # run animal detection
+                    if use_prompt_change_sam_detector and selected_detection_model == DetectionModel.SAM_DETECTOR:
+                        frame_prompt = "sign" if detection_idx < 3 else "human"
+                        megadetector.set_prompt(frame_prompt)
                     scores, labels, boxes = megadetector(img)
 
                     yield

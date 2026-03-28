@@ -27,6 +27,8 @@ class Config:
     # detection parameters
     detection_model: DetectionModel = DetectionModel.MEGADETECTOR  # one of MEGADETECTOR|MEGADETECTOR_V6|SAM_DETECTOR
     bbox_confidence_threshold: float = 0.2  # minimal confidence of detections
+    sam_detector_prompt: str = "Sign Being Held"  # text prompt used when detection_model is SAM_DETECTOR
+    prompt_change_sam_detector: bool = False  # if true, force SAM detector and switch prompt from "sign" (first 3 frames) to "human"
     detect_humans: bool = False  # whether to detect humans and include their distance estimations in the output
     append_bbox_to_results_csv: bool = False  # if true, append bbox coordinates/area info to results.csv instead of writing boundingbox.csv
     area_failsafe: bool = False  # cap sampled depth based on bbox area percent thresholds
