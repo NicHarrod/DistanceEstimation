@@ -16,6 +16,7 @@ from depth_anything_v3_pytorch import Depth_Anything_3
 from metric3d import Metric3D
 from megadetector import MegaDetector, MegaDetectorLabel
 from megadetector_v6 import MegaDetectorV6, MegaDetectorLabel as MegaDetectorV6Label
+from sam_detector import SAMDetector, SAMDetectorLabel
 from sam import SAM
 from sam3_wrapper import SAM3
 from custom_types import DetectionSamplingMethod, MultipleAnimalReduction, SampleFrom, DepthEstimationModel, DetectionModel
@@ -80,6 +81,9 @@ def run(config: Config, gui=False):
     elif config.detection_model == DetectionModel.MEGADETECTOR_V6:
         megadetector = MegaDetectorV6()
         detector_labels = MegaDetectorV6Label
+    elif config.detection_model == DetectionModel.SAM_DETECTOR:
+        megadetector = SAMDetector(conf=config.bbox_confidence_threshold)
+        detector_labels = SAMDetectorLabel
     else:
         raise ValueError(f"Invalid detection model '{config.detection_model}'")
     yield
@@ -225,6 +229,11 @@ def run(config: Config, gui=False):
                         img,
                         config.crop_top, config.crop_bottom, config.crop_left, config.crop_right,
                     )
+                    if img is None or img.size == 0 or img.shape[0] == 0 or img.shape[1] == 0:
+                        raise RuntimeError(
+                            f"Detection frame '{detection_frame_filename}' became empty after cropping "
+                            f"(top={config.crop_top}, bottom={config.crop_bottom}, left={config.crop_left}, right={config.crop_right})."
+                        )
                     if farthest_calibration_frame_disp is not None:
                         img = resize(img, farthest_calibration_frame_disp.shape)
 

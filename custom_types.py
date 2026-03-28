@@ -37,3 +37,4 @@ class DepthEstimationModel(Enum):
 class DetectionModel(Enum):
     MEGADETECTOR = auto()
     MEGADETECTOR_V6 = auto()
+    SAM_DETECTOR = auto()
