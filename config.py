@@ -28,6 +28,8 @@ class Config:
     detection_model: DetectionModel = DetectionModel.MEGADETECTOR  # one of MEGADETECTOR|MEGADETECTOR_V6
     bbox_confidence_threshold: float = 0.2  # minimal confidence of detections
     detect_humans: bool = False  # whether to detect humans and include their distance estimations in the output
+    append_bbox_to_results_csv: bool = False  # if true, append bbox coordinates/area info to results.csv instead of writing boundingbox.csv
+    area_failsafe: bool = False  # cap sampled depth based on bbox area percent thresholds
 
     # depth estimation parameters
     depth_estimation_model: DepthEstimationModel = DepthEstimationModel.DPT  # one of DPT|DEPTH_ANYTHING

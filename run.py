@@ -1,6 +1,7 @@
 from typing import Optional
 from collections import OrderedDict
 from dataclasses import dataclass
+from contextlib import ExitStack
 import logging
 import os
 import glob
@@ -91,11 +92,27 @@ def run(config: Config, gui=False):
         sam_model = SAM3()
         yield
 
-    with open(os.path.join(config.data_dir, "results", "results.csv"), "w", newline="") as result_csv_file, open(os.path.join(config.data_dir, "results", "results.txt"), "w") as result_distance_file: 
-        head_row_csv = ["transect_id", "frame_id", "detection_idx", "detection_confidence", "depth", "world_x", "world_y", "world_z", "error_status"]
+    with ExitStack() as stack:
+        result_csv_file = stack.enter_context(open(os.path.join(config.data_dir, "results", "results.csv"), "w", newline=""))
+        result_distance_file = stack.enter_context(open(os.path.join(config.data_dir, "results", "results.txt"), "w"))
+
+        bbox_result_columns = ["bbox_xmin", "bbox_ymin", "bbox_xmax", "bbox_ymax", "bbox_area", "bbox_area_percent"]
+        empty_bbox_result_fields = ["" for _ in bbox_result_columns]
+        head_row_csv = ["transect_id", "frame_id", "detection_idx", "detection_confidence", "depth", "world_x", "world_y", "world_z"]
+        if config.append_bbox_to_results_csv:
+            head_row_csv += bbox_result_columns
+        head_row_csv += ["error_status"]
+
+        head_row_bbox_csv = ["transect_id", "frame_id", "detection_idx", "bbox_xmin", "bbox_ymin", "bbox_xmax", "bbox_ymax", "bbox_area_percent", "error_status"]
         head_row_txt = ["Camera trap*Label", "Observation*Radial distance"]
-        result_csv_writer = csv.writer(result_csv_file) 
+        result_csv_writer = csv.writer(result_csv_file)
+        bbox_csv_writer = None
+        if not config.append_bbox_to_results_csv:
+            bbox_csv_file = stack.enter_context(open(os.path.join(config.data_dir, "results", "boundingbox.csv"), "w", newline=""))
+            bbox_csv_writer = csv.writer(bbox_csv_file)
         result_csv_writer.writerow(head_row_csv)
+        if bbox_csv_writer is not None:
+            bbox_csv_writer.writerow(head_row_bbox_csv)
         result_distance_file.write("\t".join(head_row_txt) + os.linesep)
 
         transect_dirs = sorted(glob.glob(os.path.join(config.data_dir, "transects", "*/")))
@@ -205,7 +222,11 @@ def run(config: Config, gui=False):
                         notifier.send(title="Distance Estimation Error", message=notification_str)
                     except Exception as e:
                         logging.error(f"Failed to send desktop notification: {exception_to_str(e)}")
-                result_csv_writer.writerow([transect_id, "", "", "", "", "", "", "", notification_str])
+                row = [transect_id, "", "", "", "", "", "", ""]
+                if config.append_bbox_to_results_csv:
+                    row += empty_bbox_result_fields
+                row += [notification_str]
+                result_csv_writer.writerow(row)
             
             detection_frame_filenames = sorted(list(set(
                 multi_file_extension_glob(os.path.join(transect_dir, "detection_frames", "*"), config.intensity_image_extensions) +
@@ -255,6 +276,42 @@ def run(config: Config, gui=False):
                     centerness = [((img.shape[1] / 2) - (box[0] + box[2]) / 2) ** 2 + ((img.shape[0] / 2) - (box[1] + box[3]) / 2) ** 2 for box in boxes]
                     centerness_idx = np.argsort(centerness)
                     scores, labels, boxes = scores[centerness_idx], labels[centerness_idx], boxes[centerness_idx]
+
+                    frame_h, frame_w = img.shape[0], img.shape[1]
+                    frame_area = float(max(1, frame_h * frame_w))
+                    bbox_attributes = []
+                    bbox_area_percents = []
+                    for i, box in enumerate(boxes):
+                        xmin_f = max(0.0, min(float(frame_w), float(box[0])))
+                        ymin_f = max(0.0, min(float(frame_h), float(box[1])))
+                        xmax_f = max(0.0, min(float(frame_w), float(box[2])))
+                        ymax_f = max(0.0, min(float(frame_h), float(box[3])))
+                        width = max(0.0, xmax_f - xmin_f)
+                        height = max(0.0, ymax_f - ymin_f)
+                        bbox_area = width * height
+                        bbox_area_percent = (100.0 * width * height) / frame_area
+                        bbox_area_percents += [bbox_area_percent]
+                        attrs = [
+                            f"{xmin_f:.2f}",
+                            f"{ymin_f:.2f}",
+                            f"{xmax_f:.2f}",
+                            f"{ymax_f:.2f}",
+                            f"{bbox_area:.2f}",
+                            f"{bbox_area_percent:.4f}",
+                        ]
+                        bbox_attributes += [attrs]
+                        if bbox_csv_writer is not None:
+                            bbox_csv_writer.writerow([
+                                transect_id,
+                                detection_id,
+                                f"{i:03d}",
+                                attrs[0],
+                                attrs[1],
+                                attrs[2],
+                                attrs[3],
+                                attrs[5],
+                                "",
+                            ])
 
                     if config.detection_sampling_method in (DetectionSamplingMethod.SAM, DetectionSamplingMethod.SAM3):
                         # compute SAM masks
@@ -323,10 +380,12 @@ def run(config: Config, gui=False):
 
                     yield
 
+                    sampled_scores = []
                     sampled_depths = []
                     sample_locations = []
                     world_positions = []
-                    for box, mask in zip(boxes, masks):
+                    sampled_bbox_attributes = []
+                    for box_idx, (score, box, mask) in enumerate(zip(scores, boxes, masks)):
                         yield
                         if box[2] <= box[0] or box[3] <= box[1]:
                             continue
@@ -368,6 +427,21 @@ def run(config: Config, gui=False):
                             sample_locations += [sample_location]
                         else:
                             raise RuntimeError(f"Invalid configuration value '{config.detection_sampling_method}' for configuration detection_sampling_method")
+
+                        if config.area_failsafe:
+                            area_percent = bbox_area_percents[box_idx]
+                            max_depth_cap = None
+                            if area_percent > 80.0:
+                                max_depth_cap = 1.5
+                            elif area_percent > 60.0:
+                                max_depth_cap = 2.5
+                            elif area_percent > 40.0:
+                                max_depth_cap = 3.5
+                            if max_depth_cap is not None:
+                                sampled_depths[-1] = min(sampled_depths[-1], max_depth_cap)
+
+                        sampled_scores += [score]
+                        sampled_bbox_attributes += [bbox_attributes[box_idx]]
         
                         # compute horizontal angle a
                         f = (0.5 * depth.shape[1]) / math.tan(0.5 * math.pi * config.camera_horizontal_fov / 180)
@@ -391,8 +465,10 @@ def run(config: Config, gui=False):
                             break
 
                     if config.multiple_animal_reduction == MultipleAnimalReduction.MEDIAN:
+                        sampled_scores = [np.median(sampled_scores)] if len(sampled_scores) > 0 else []
                         sampled_depths = [np.median(sampled_depths)] if len(sampled_depths) > 0 else []
-                        world_positions = [np.mean(world_positions, axis=0)]
+                        world_positions = [np.mean(world_positions, axis=0)] if len(world_positions) > 0 else []
+                        sampled_bbox_attributes = [empty_bbox_result_fields]
 
 
                     if config.make_figures:
@@ -400,10 +476,19 @@ def run(config: Config, gui=False):
 
                     yield
 
-                    for i, (score, sampled_depth, world_position) in enumerate(zip(scores, sampled_depths, world_positions)):
+                    for i, (score, sampled_depth, world_position, bbox_attrs) in enumerate(zip(sampled_scores, sampled_depths, world_positions, sampled_bbox_attributes)):
                         detection_i = i if config.multiple_animal_reduction != MultipleAnimalReduction.MEDIAN else -1
-                        result_csv_writer.writerow([transect_id, detection_id, f"{detection_i:03d}", f"{score.item():.4f}", f"{sampled_depth.item():.4f}", f"{world_position[0].item():.4f}", f"{world_position[1].item():.4f}", f"{world_position[2].item():.4f}", ""])
-                        result_distance_file.write("\t".join([transect_id, f"{sampled_depth.item():.4f}"]) + os.linesep)
+                        score_value = score.item() if hasattr(score, "item") else float(score)
+                        sampled_depth_value = sampled_depth.item() if hasattr(sampled_depth, "item") else float(sampled_depth)
+                        world_x = world_position[0].item() if hasattr(world_position[0], "item") else float(world_position[0])
+                        world_y = world_position[1].item() if hasattr(world_position[1], "item") else float(world_position[1])
+                        world_z = world_position[2].item() if hasattr(world_position[2], "item") else float(world_position[2])
+                        row = [transect_id, detection_id, f"{detection_i:03d}", f"{score_value:.4f}", f"{sampled_depth_value:.4f}", f"{world_x:.4f}", f"{world_y:.4f}", f"{world_z:.4f}"]
+                        if config.append_bbox_to_results_csv:
+                            row += bbox_attrs
+                        row += [""]
+                        result_csv_writer.writerow(row)
+                        result_distance_file.write("\t".join([transect_id, f"{sampled_depth_value:.4f}"]) + os.linesep)
 
                 except Exception as e:
                     exception_str = exception_to_str(e)
@@ -416,4 +501,10 @@ def run(config: Config, gui=False):
                             notifier.send(title="Distance Estimation Error", message=notification_str)
                         except Exception as e:
                             logging.error(f"Failed to send desktop notification: {exception_to_str(e)}")
-                    result_csv_writer.writerow([transect_id, "", "", "", "", "", "", "", notification_str])
+                    row = [transect_id, "", "", "", "", "", "", ""]
+                    if config.append_bbox_to_results_csv:
+                        row += empty_bbox_result_fields
+                    row += [notification_str]
+                    result_csv_writer.writerow(row)
+                    if bbox_csv_writer is not None:
+                        bbox_csv_writer.writerow([transect_id, detection_id, "", "", "", "", "", "", notification_str])

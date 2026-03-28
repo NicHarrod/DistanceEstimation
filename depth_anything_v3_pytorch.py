@@ -4,19 +4,22 @@ import torch
 import numpy as np
 from PIL import Image
 from depth_anything_3.api import DepthAnything3
-
+from pathlib import Path
 
 class Depth_Anything_3:
     def __init__(
         self,
-        checkpoint_dir = "../depth-anything-3/checkpoints/da3_mono_large",
+        checkpoint_dir=None,
         device=None,
-        process_res=1024,
+        process_res=504,
         process_res_method="upper_bound_resize",
     ):
-        """
-        checkpoint_dir: folder containing config.json + model.safetensors
-        """
+        # Resolve from this file's location, not current working directory
+        if checkpoint_dir is None:
+            repo_root = Path(__file__).resolve().parent.parent
+            checkpoint_dir = repo_root / "depth-anything-3" / "checkpoints" / "da3_mono_large"
+
+        checkpoint_dir = str(Path(checkpoint_dir).resolve())
 
         if not os.path.isdir(checkpoint_dir):
             raise RuntimeError(f"Checkpoint directory not found: {checkpoint_dir}")
