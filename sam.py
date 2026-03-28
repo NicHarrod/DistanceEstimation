@@ -56,10 +56,19 @@ class SAM(DownloadableWeights):
             box_input = np.array(box, dtype=np.float32)
             
             # Get masks for this box
-            masks, scores, logits = self.predictor.predict(
-                box=box_input,
-                multimask_output=False
-            )
+            if self.device.type == "cuda":
+                # Guard against external/global autocast contexts (e.g. bf16)
+                # that can make segment_anything return unsupported dtypes.
+                with torch.autocast(device_type="cuda", enabled=False):
+                    masks, scores, logits = self.predictor.predict(
+                        box=box_input,
+                        multimask_output=False
+                    )
+            else:
+                masks, scores, logits = self.predictor.predict(
+                    box=box_input,
+                    multimask_output=False
+                )
             
             # Take the mask with highest confidence
             mask = masks[0] > 0.0
