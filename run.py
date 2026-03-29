@@ -285,7 +285,7 @@ def run(config: Config, gui=False):
 
                     # run animal detection
                     if use_prompt_change_sam_detector and selected_detection_model == DetectionModel.SAM_DETECTOR:
-                        frame_prompt = "sign" if detection_idx < 3 else "human"
+                        frame_prompt = "sign" if detection_idx < 3 else "human holding sign"
                         megadetector.set_prompt(frame_prompt)
                     scores, labels, boxes = megadetector(img)
 
